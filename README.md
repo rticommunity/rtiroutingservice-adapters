@@ -1,2 +1,2 @@
-# rtiroutingservice-adaptors
-Example Adaptors for RTI Routing Service
+# rtiroutingservice-adapters
+Example Adapters for RTI Routing Service
