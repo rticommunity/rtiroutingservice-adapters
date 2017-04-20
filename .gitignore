@@ -1,0 +1,16 @@
+# Emacs temp files
+*~
+
+# Eclise projects
+.cproject
+.project
+
+
+# Object directories
+objs/
+
+# Shared objects (inc. Windows DLLs)
+*.dll
+*.so
+*.so.*
+
