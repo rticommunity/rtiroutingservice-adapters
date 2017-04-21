@@ -17,21 +17,21 @@ color=RED,x=10,y=20,shapesize=30
 
 You can modify the **LineConversion.c** to use a different file format.
 
-##Running the adaper
+## Running the adapter
 The adapter is loaded into the RTI routing service using the XML configuration for the Routing Service. See  ```<adapter_plugin>``` XML tag in the ```file_adapter_config.xml``` file.
 
 This same file can be used to configure the various properties of the adapter.
 
-##Example executions
+## Example executions
 
 Executing in Linux (Ubuntu 14.04):
 ```
 /home/gerardo/rti_connext_dds-5.2.7/bin/rtiroutingservice -cfgName file_to_dds -cfgFile file_adapter_config.xml -appName FileAdaptor
-ubuntu:file$ /home/gerardo/rti_connext_dds-5.2.7/bin/rtiroutingservice -cfgName file_to_dds -cfgFile /mnt/hgfs/gerardo/dom/gitrepos/rtiroutingservice-adapters/adapters/file/file_adapter_config.xml -appName FileAdaptor
+ubuntu:file$ /home/gerardo/rti_connext_dds-5.2.7/bin/rtiroutingservice -cfgName file_to_dds -cfgFile file_adapter_config.xml -appName FileAdapter
 RTIRS_FileAdapterPlugin_create
 RTIRS_FileAdapterPlugin_create_connection
 RTIRS_FileConnection_create_session
-RTI Routing Service 5.2.7 started (with name FileAdaptor)
+RTI Routing Service 5.2.7 started (with name FileAdapter)
 RTIRS_FileConnection_create_stream_reader...
 RTIRS_FileConnection_create_stream_reader... OK
 RTIRS_FileStreamReader_run. Period: {1,0}
