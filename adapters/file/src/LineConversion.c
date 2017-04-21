@@ -63,7 +63,7 @@
  * @return 0 for error, 1 for success, -1 to indicate that the sample
  *         should not be sent.
  */
-int RTIRS_FileAdapter_read_sample(
+enum RTIRS_FileAdapter_READ_ACTION RTIRS_FileAdapter_read_sample(
     struct DDS_DynamicData * sampleOut, 
     FILE * file,
     char * buffer, 

@@ -27,8 +27,13 @@
 /* Read line                                                                 */
 /*                                                                           */
 /* ========================================================================= */
+enum RTIRS_FileAdapter_READ_ACTION {
+	READ_ACTION_ERROR       = 0,
+	READ_ACTION_SEND_SAMPLE = 1,
+	READ_ACTION_SKIP_SAMPLE = 2
+};
 
-int RTIRS_FileAdapter_read_sample(
+enum RTIRS_FileAdapter_READ_ACTION RTIRS_FileAdapter_read_sample(
     struct DDS_DynamicData * sampleOut, 
     FILE * file,
     char * buffer, 

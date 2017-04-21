@@ -160,7 +160,9 @@ void RTIRS_FileStreamReader_read(
     int * count,
     RTI_RoutingServiceEnvironment * env) 
 {
-    int i, j = 0, result;
+    int i;
+    enum RTIRS_FileAdapter_READ_ACTION result;
+    int index = 0;
 
     struct RTIRS_FileStreamReader * self =
         (struct RTIRS_FileStreamReader *) stream_reader;
@@ -179,14 +181,14 @@ void RTIRS_FileStreamReader_read(
     /*
      * Read as many as samplesPerRead (or less if we encounter the end of file)
      */
-    for (i=0; i<self->samplesPerRead && !feof(self->file); i++) {
+    for (i=0; i<self->samplesPerRead && !feof(self->file); ++i) {
 
         /*
          * Create a dynamic data sample for every buffer we read. We use
          * the type we received when the stream reader was created
          */
-        sample = self->_sample_list[j];
-        info   = self->_info_list[j];
+        sample = self->_sample_list[index];
+        info   = self->_info_list[index];
 
         /*
          * Fill the dynamic data sample fields
@@ -199,27 +201,24 @@ void RTIRS_FileStreamReader_read(
                     sample, self->file, 
                     self->_buffer, self->maxSampleSize, env);
 
-        if (result == 0) {
-            /* Error */ 
+        switch ( result ) {
+        case READ_ACTION_ERROR :
+            RTI_RoutingServiceEnvironment_set_error( env, "Incorrect file");
         	*count = 0;
-            RTI_RoutingServiceEnvironment_set_error(
-                env, "Incorrect file");
             return;
-        }
-        else if ( result != -1 ) {
-        	/* result == -1 indicates sample should not be sent */
-        	++j;
+        case READ_ACTION_SKIP_SAMPLE :
+        	continue;
+        case READ_ACTION_SEND_SAMPLE :
             printf("RTIRS_FileStreamReader_read got sample: \n");
         	DDS_DynamicDataTypeSupport_print_data(self->_typeSupport, sample);
+
+        	++index;
+        	*count += 1;
+            ++self->samplesSentCount;
+            break;
         }
     }
 
-  	/*
-     * Set the count to the actual number of samples we have generated
-     */
-    *count = j;
-    
-    self->samplesSentCount += *count;
     if (*count != 0) {
         *sample_list = (RTI_RoutingServiceSample *)self->_sample_list;
     }
