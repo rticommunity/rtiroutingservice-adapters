@@ -68,6 +68,14 @@
                   <value>1</value>
                 </element>
                 <element>
+                  <name>SamplesPerDisposedSample</name>
+                  <value>5</value>
+                </element>
+                <element>
+                  <name>SamplesPerUnregisteredSample</name>
+                  <value>10</value>
+                </element>
+                <element>
                    <name>Loop</name>
                    <value>1</value>
                 </element>

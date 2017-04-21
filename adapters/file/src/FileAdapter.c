@@ -95,10 +95,13 @@ struct RTIRS_FileStreamReader {
     int samplesPerRead;
     int maxSampleSize;
 
+    int samplesPerDisposedSample;
+    int samplesPerUnregisteredSample;
+
 
     struct DDS_DynamicData     ** _sample_list;
     struct DDS_SampleInfo      ** _info_list;
-    int samplesSentCount;
+    int samplesReadCount;
   
   FILE * file;
 };
@@ -201,34 +204,58 @@ void RTIRS_FileStreamReader_read(
                     sample, self->file, 
                     self->_buffer, self->maxSampleSize, env);
 
+        /* Set instance state according to parameters */
+        if ( (self->samplesReadCount % self->samplesPerDisposedSample) == 1 ) {
+        	info->instance_state = DDS_NOT_ALIVE_DISPOSED_INSTANCE_STATE;
+        	info->valid_data     = DDS_BOOLEAN_FALSE;
+        }
+        else if ( (self->samplesReadCount % self->samplesPerUnregisteredSample) == 2 ) {
+        	info->instance_state = DDS_NOT_ALIVE_NO_WRITERS_INSTANCE_STATE;
+        	info->valid_data     = DDS_BOOLEAN_FALSE;
+        }
+        else {
+            printf("RTIRS_FileStreamReader_read...\n");
+       	    info->instance_state = DDS_ALIVE_INSTANCE_STATE;
+        	info->valid_data     = DDS_BOOLEAN_FALSE;
+        }
+
+
         switch ( result ) {
         case READ_ACTION_ERROR :
             RTI_RoutingServiceEnvironment_set_error( env, "Incorrect file");
         	*count = 0;
             return;
         case READ_ACTION_SKIP_SAMPLE :
+            printf("RTIRS_FileStreamReader_read skipped sample\n");
         	continue;
         case READ_ACTION_SEND_SAMPLE :
-            printf("RTIRS_FileStreamReader_read got sample: \n");
-        	DDS_DynamicDataTypeSupport_print_data(self->_typeSupport, sample);
+        	if ( info->instance_state == DDS_ALIVE_INSTANCE_STATE ) {
+        		printf("RTIRS_FileStreamReader_read: Returning regular sample:\n");
+        		DDS_DynamicDataTypeSupport_print_data(self->_typeSupport, sample);
+        	}
+        	else if ( info->instance_state == DDS_NOT_ALIVE_DISPOSED_INSTANCE_STATE ) {
+        		printf("RTIRS_FileStreamReader_read Returning disposed sample: \n");
+        	}
+           	else if ( info->instance_state == DDS_NOT_ALIVE_NO_WRITERS_INSTANCE_STATE ) {
+            	printf("RTIRS_FileStreamReader_read Returning unregistered sample: \n");
+            }
 
         	++index;
         	*count += 1;
-            ++self->samplesSentCount;
+            ++self->samplesReadCount;
             break;
         }
     }
 
     if (*count != 0) {
         *sample_list = (RTI_RoutingServiceSample *)self->_sample_list;
+        *info_list   = (RTI_RoutingServiceSampleInfo *)self->_info_list;
     }
     
     /*
      * We don't provide sample info in this adapter, which
      * is an optional feature
      */
-    
-    printf("RTIRS_FileStreamReader_read %d samples\n", *count);
 }
 
 
@@ -249,31 +276,48 @@ void RTIRS_FileStreamReader_return_loan(
      */
 }
 
-/*****************************************************************************/
 
-void RTIRS_FileStreamReader_update(
-    RTI_RoutingServiceAdapterEntity stream_reader,
+/*****************************************************************************/
+int RTIRS_FileStreamReader_parsePositiveIntProperty(
+    int *outPropertyValue,
+    int defaultPropertyValue,
+    const char *propertyName,
     const struct RTI_RoutingServiceProperties * properties,
     RTI_RoutingServiceEnvironment * env)
 {
-    
-    const char * readPeriodProp = NULL;
-    int readPeriodIntProp;
-    const char * samplesPerReadProp = NULL;
-    int samplesPerReadIntProp;
-    const char * maxSampleSizeProp = NULL;
-    int maxSampleSizeIntProp;
-    const char * loopProp = NULL;
-    int loop = 0;
+	const char *propertyValueString =
+			RTI_RoutingServiceProperties_lookup_property(properties, propertyName);
 
-    struct RTIRS_FileStreamReader * self = 
+    if (propertyValueString == NULL) {
+    	*outPropertyValue = defaultPropertyValue;
+    } else {
+    	*outPropertyValue = atoi(propertyValueString);
+        if ( *outPropertyValue <= 0 ) {
+            RTI_RoutingServiceEnvironment_set_error(
+                env, "Non-positive value for property '%s'", propertyName);
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+/*****************************************************************************/
+int RTIRS_FileStreamReader_parseUpdateableProperties(
+	    RTI_RoutingServiceAdapterEntity stream_reader,
+	    const struct RTI_RoutingServiceProperties * properties,
+	    RTI_RoutingServiceEnvironment * env)
+{
+    struct RTIRS_FileStreamReader * self =
         (struct RTIRS_FileStreamReader *) stream_reader;
 
-    printf("%s\n", __func__);
-
-    /*
-     * Get the configuration properties in <route>/<input>/<property>
-     */
+    const char * loopProp = NULL;
+    int loop = 0;
+    int readPeriodIntProp;
+    int samplesPerReadIntProp;
+    int samplesPerDisposedSampleIntProp;
+    int samplesPerUnregisteredSampleIntProp;
+    int maxSampleSizeIntProp;
 
     loopProp = RTI_RoutingServiceProperties_lookup_property(
         properties, "Loop");
@@ -284,51 +328,56 @@ void RTIRS_FileStreamReader_update(
         }
     }
 
-    readPeriodProp = RTI_RoutingServiceProperties_lookup_property(
-        properties, "ReadPeriod");
-    if (readPeriodProp == NULL) {
-        readPeriodIntProp = 1000;
-    } else {
-        readPeriodIntProp = atoi(readPeriodProp);
-        if(readPeriodIntProp < 0) {
-            RTI_RoutingServiceEnvironment_set_error(
-                env, "Negative value for property ReadPeriod");
-            return;
-        }
+    if ( !RTIRS_FileStreamReader_parsePositiveIntProperty(
+    			&readPeriodIntProp, 1000, "ReadPeriod", properties, env) ) {
+        return 0;
+    }
+    if ( !RTIRS_FileStreamReader_parsePositiveIntProperty(
+    			&samplesPerReadIntProp, 1, "SamplesPerRead", properties, env) ) {
+        return 0;
+    }
+    if ( !RTIRS_FileStreamReader_parsePositiveIntProperty(
+    			&samplesPerDisposedSampleIntProp, 0, "SamplesPerDisposedSample", properties, env) ) {
+        return 0;
+    }
+    if ( !RTIRS_FileStreamReader_parsePositiveIntProperty(
+    			&samplesPerUnregisteredSampleIntProp, 0, "SamplesPerUnregisteredSample", properties, env) ) {
+        return 0;
+    }
+    if ( !RTIRS_FileStreamReader_parsePositiveIntProperty(
+    			&maxSampleSizeIntProp, 4096, "MaxSampleSize", properties, env) ) {
+        return 0;
     }
 
-    samplesPerReadProp = RTI_RoutingServiceProperties_lookup_property(
-        properties, "SamplesPerRead");
-    if (samplesPerReadProp == NULL) {
-        samplesPerReadIntProp = 1;
-    } else {
-        samplesPerReadIntProp = atoi(samplesPerReadProp);
-        if(samplesPerReadIntProp <= 0) {
-            RTI_RoutingServiceEnvironment_set_error(
-                env, "Non-positive value for property SamplesPerRead");
-            return;
-        }
+    if ( self->maxSampleSize == 0 ) {
+    	self->maxSampleSize = maxSampleSizeIntProp;
+    }
+    else if ( maxSampleSizeIntProp != self->maxSampleSize ) {
+    	RTI_RoutingServiceEnvironment_set_error(
+    			env, "Property MaxSampleSize immutable while running");
+    	return 0;
     }
 
-    maxSampleSizeProp = RTI_RoutingServiceProperties_lookup_property(
-        properties, "MaxSampleSize");
-    if (maxSampleSizeProp == NULL) {
-        maxSampleSizeIntProp = 4096;
-    } else {
-        maxSampleSizeIntProp = atoi(maxSampleSizeProp);
-    }
-
-    if (maxSampleSizeIntProp != self->maxSampleSize) {
-        RTI_RoutingServiceEnvironment_set_error(
-            env, "Property MaxSampleSize immutable while running");
-        return;
-    }
-
-
-    self->samplesPerRead = samplesPerReadIntProp;
-    self->readPeriod.sec =  readPeriodIntProp / 1000;
+    self->samplesPerRead     = samplesPerReadIntProp;
+    self->readPeriod.sec     =  readPeriodIntProp / 1000;
     self->readPeriod.nanosec = (readPeriodIntProp % 1000) * 1000000;
     self->loop = loop;
+
+    self->samplesPerDisposedSample     = samplesPerDisposedSampleIntProp;
+    self->samplesPerUnregisteredSample = samplesPerUnregisteredSampleIntProp;
+
+    return 1;
+}
+
+/*****************************************************************************/
+
+void RTIRS_FileStreamReader_update(
+    RTI_RoutingServiceAdapterEntity stream_reader,
+    const struct RTI_RoutingServiceProperties * properties,
+    RTI_RoutingServiceEnvironment * env)
+{
+    printf("%s\n", __func__);
+    RTIRS_FileStreamReader_parseUpdateableProperties(stream_reader, properties, env);
 }
 
 /* ========================================================================= */
@@ -447,18 +496,9 @@ RTIRS_FileConnection_create_stream_reader(
     const struct RTI_RoutingServiceStreamReaderListener * listener,
     RTI_RoutingServiceEnvironment * env) 
 {
-
     struct RTIRS_FileStreamReader * stream_reader = NULL;
-    const char * readPeriodProp = NULL;
-    int readPeriodIntProp;
-    const char * samplesPerReadProp = NULL;
-    int samplesPerReadIntProp;
-    const char * maxSampleSizeProp = NULL;
-    int maxSampleSizeIntProp;
     const char * fileNameProp = NULL;
     FILE * file = NULL;
-    const char * loopProp = NULL;
-    int loop = 0;
     int error = 0;
     int i;
 
@@ -473,10 +513,30 @@ RTIRS_FileConnection_create_stream_reader(
   #endif
 
     printf("%s...\n", __func__);
+
+    /*
+     * Create the stream reader object
+     */
+
+    stream_reader = calloc(
+        1, sizeof(struct RTIRS_FileStreamReader));
+    if (stream_reader == NULL) {
+        RTI_RoutingServiceEnvironment_set_error(
+            env, "Memory allocation error");
+        return NULL;
+    }
+
     /*
      * Get the configuration properties in <route>/<input>/<property>
      */
 
+    /* maxSampleSize==0 indicates it is not initialized */
+    stream_reader->maxSampleSize = 0;
+    if ( !RTIRS_FileStreamReader_parseUpdateableProperties(stream_reader, properties, env) ) {
+
+        RTIRS_FileStreamReader_delete(stream_reader);
+        return NULL;
+    }
 
     fileNameProp = RTI_RoutingServiceProperties_lookup_property(
         properties, "FileName");
@@ -486,65 +546,19 @@ RTIRS_FileConnection_create_stream_reader(
         return NULL;
     }
 
-    loopProp = RTI_RoutingServiceProperties_lookup_property(
-        properties, "Loop");
-    if (loopProp != NULL) {
-        if (!strcmp(loopProp, "yes") || !strcmp(loopProp, "true") ||
-            !strcmp(loopProp, "1")) {
-            loop = 1;
-        }
+    if ( strcmp("stdin", fileNameProp) == 0 ) {
+        file = stdin;
     }
-
-    readPeriodProp = RTI_RoutingServiceProperties_lookup_property(
-        properties, "ReadPeriod");
-    if (readPeriodProp == NULL) {
-        readPeriodIntProp = 1000;
-    } else {
-        readPeriodIntProp = atoi(readPeriodProp);
-        if(readPeriodIntProp < 0) {
-            RTI_RoutingServiceEnvironment_set_error(
-                env, "Negative value for property ReadPeriod");
-            return NULL;
-        }
-    }
-
-    samplesPerReadProp = RTI_RoutingServiceProperties_lookup_property(
-        properties, "SamplesPerRead");
-    if (samplesPerReadProp == NULL) {
-        samplesPerReadIntProp = 1;
-    } else {
-        samplesPerReadIntProp = atoi(samplesPerReadProp);
-        if(samplesPerReadIntProp <= 0) {
-            RTI_RoutingServiceEnvironment_set_error(
-                env, "Non-positive value for property SamplesPerRead");
-            return NULL;
-        }
-    }
-
-    maxSampleSizeProp = RTI_RoutingServiceProperties_lookup_property(
-        properties, "MaxSampleSize");
-    if (maxSampleSizeProp == NULL) {
-        maxSampleSizeIntProp = 4096;
-    } else {
-        maxSampleSizeIntProp = atoi(maxSampleSizeProp);
-        if(maxSampleSizeIntProp < 0) {
-            RTI_RoutingServiceEnvironment_set_error(
-                env, "Negative value for property MaxSampleSize");
-            return NULL;
-        }
-    }
-
-    if (strcmp("stdin", fileNameProp)) {
+    else {
         file = fopen(fileNameProp, "r");
 
         if (file == NULL) {
             RTI_RoutingServiceEnvironment_set_error(
                 env, "Could not open file for read: %s", fileNameProp);
 
-            return NULL;
+           RTIRS_FileStreamReader_delete(stream_reader);
+           return NULL;
         }
-    } else {
-        file = stdin;
     }
 
     /*
@@ -556,42 +570,22 @@ RTIRS_FileConnection_create_stream_reader(
 
         RTI_RoutingServiceEnvironment_set_error(
             env, "Unsupported type format");
-        return NULL;
-    }
 
-    /*
-     * Create the stream reader object
-     */
-
-    stream_reader = calloc(
-        1, sizeof(struct RTIRS_FileStreamReader));
-
-    if (stream_reader == NULL) {
-        RTI_RoutingServiceEnvironment_set_error(
-            env, "Memory allocation error");
-        if(file != stdin) {
-            fclose(file);
-        }
+        RTIRS_FileStreamReader_delete(stream_reader);
         return NULL;
     }
 
     stream_reader->_buffer = 
-        calloc(maxSampleSizeIntProp+1, sizeof(char));
+        calloc(stream_reader->maxSampleSize+1, sizeof(char));
 
     if (stream_reader->_buffer == NULL) {
         RTI_RoutingServiceEnvironment_set_error(
             env, "Memory allocation error");
-        free(stream_reader);
-        if(file != stdin) {
-            fclose(file);
-        }
+
+
+        return NULL;
     }
 
-    stream_reader->samplesPerRead = samplesPerReadIntProp;
-    stream_reader->maxSampleSize = maxSampleSizeIntProp;
-    stream_reader->readPeriod.sec =  readPeriodIntProp / 1000;
-    stream_reader->readPeriod.nanosec = (readPeriodIntProp % 1000) * 1000000;
-    stream_reader->loop = loop;
     stream_reader->file = file;
     stream_reader->listener = *listener;    
     stream_reader->_typeCode = 
@@ -600,17 +594,19 @@ RTIRS_FileConnection_create_stream_reader(
 
     stream_reader->_sample_list = calloc(stream_reader->samplesPerRead, sizeof(DDS_DynamicData *));
     stream_reader->_info_list   = calloc(stream_reader->samplesPerRead, sizeof(struct DDS_SampleInfo *));
-    stream_reader->samplesSentCount = 0;
+    stream_reader->samplesReadCount = 0;
 
     if ( stream_reader->_sample_list == NULL ) {
         RTI_RoutingServiceEnvironment_set_error(
              env, "Memory allocation error (sample_list)");
+
         RTIRS_FileStreamReader_delete(stream_reader);
         return NULL;
     }
     if ( stream_reader->_info_list == NULL ) {
         RTI_RoutingServiceEnvironment_set_error(
              env, "Memory allocation error (info_list)");
+
         RTIRS_FileStreamReader_delete(stream_reader);
         return NULL;
     }
@@ -644,13 +640,14 @@ RTIRS_FileConnection_create_stream_reader(
         }
         *(stream_reader->_info_list[i]) = DDS_SAMPLEINFO_DEFAULT;
         stream_reader->_info_list[i]->instance_handle = DDS_HANDLE_NIL;
-        stream_reader->_info_list[i]->valid_data      = 0;
-        stream_reader->_info_list[i]->instance_state  = DDS_NOT_ALIVE_DISPOSED_INSTANCE_STATE;
+        stream_reader->_info_list[i]->valid_data      = 1;
+        stream_reader->_info_list[i]->instance_state  = DDS_ALIVE_INSTANCE_STATE;
     }
 
     if (error) {
         RTI_RoutingServiceEnvironment_set_error(
             env, "Error initializing samples and sample_info thread");
+
         RTIRS_FileStreamReader_delete(stream_reader);
         return NULL;
     }
@@ -674,6 +671,7 @@ RTIRS_FileConnection_create_stream_reader(
     if(error) {
         RTI_RoutingServiceEnvironment_set_error(
             env, "Error creating thread");
+
         RTIRS_FileStreamReader_delete(stream_reader);
         return NULL;
     }
