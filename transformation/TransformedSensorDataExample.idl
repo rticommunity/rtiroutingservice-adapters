@@ -1,0 +1,9 @@
+
+const long TRANSFORMED_SENSOR_DATA_ARRAY_SIZE = 64;
+
+struct TransformedSensorDataExample {
+
+	unsigned long ID[TRANSFORMED_SENSOR_DATA_ARRAY_SIZE];
+	float reading[TRANSFORMED_SENSOR_DATA_ARRAY_SIZE];
+	boolean active[TRANSFORMED_SENSOR_DATA_ARRAY_SIZE];
+	};
