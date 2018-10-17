@@ -1,0 +1,13 @@
+
+const long SENSOR_DATA_ARRAY_SIZE = 64;
+
+struct SensorData{
+	unsigned long ID;
+	float reading;
+	boolean active;
+	};
+ 
+struct SensorDataExample {
+
+	SensorData sensors[SENSOR_DATA_ARRAY_SIZE];
+	};

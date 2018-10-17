@@ -1,0 +1,84 @@
+<?xml version="1.0"?>
+<dds xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://community.rti.com/schema/5.3.1/rti_routing_service.xsd">
+
+    <!--
+    **********************************************************************
+    RTI Router example                                                     
+    ********************************************************************** 
+    This example reads SensorDataExample on domain 0 and transforms them           
+    into TransformedSensorDataExample. See idl in this example                                          
+    ********************************************************************** 
+    -->
+
+
+    <!-- 
+    Here we're loading our custom transformation class
+    -->
+    <transformation_library name="MyTransformationLib">
+        <!-- 
+        This transformation is implemented in that shared library. It allows
+        copying fields from one dynamic data sample to other dynamic data sample
+        -->
+		<transformation_plugin name="SensorDataTransformation">
+		    <!--
+            By specifing this value, RTI Router will search for
+            sensordatatransf.so in Unix systems and rtirsassigntransfs.dll in Windows
+            systems. The path to search will be the current directory or if
+            not there, the RTI Route executable directory, which is where it
+            actually is.
+            -->
+            <dll>sensordatatransf</dll> 
+			<create_function>SensorDataTransformationPlugin_create_transformation_plugin</create_function>
+        </transformation_plugin>
+    </transformation_library>
+
+    <!-- 
+    This is the router service configuration for this example
+    -->
+	<routing_service name="SensorDataTransformationExample">
+        <annotation>
+            <documentation>Uses a custom transformation loaded from a compiled library</documentation>
+        </annotation>
+        <domain_route name="DomainRoute" enabled="true">
+		    <!-- Reading data from participant_1 -->
+			<participant name="1">
+				<domain_id>0</domain_id>
+            </participant>
+
+            <participant name="2">
+                <domain_id>0</domain_id>
+            </participant>
+			<!-- 
+            A session with default configuration that contains a single topic route
+            -->
+            <session name="Session" enabled="true">
+			     <!-- 
+                 Reading tSensorData topic
+                 -->
+				<topic_route name="SensorData">
+					<input participant="1">
+					    <!-- 
+                        Reading a type whose registered name is SensorDataExample.
+                        As we don't register ourselves on participant 1, its actual
+                        type code will have to be discovered when the router runs
+                        -->
+						<registered_type_name>SensorDataExample</registered_type_name>
+						<topic_name>Example SensorDataExample</topic_name>
+					</input>
+					<output>
+						<topic_name>Example TransformedSensorDataExample</topic_name>
+						<!-- Output with topic TransformedSensorDataExample and type  TransformedSensorDataExample-->
+						<registered_type_name>TransformedSensorDataExample</registered_type_name>
+						<!--
+						We are going to use the transformation we loaded.
+						We refer to the class using LibraryName::ClassName
+						-->
+						<transformation plugin_name="MyTransformationLib::SensorDataTransformation">
+							<input_type_name>SensorDataExample</input_type_name>
+						</transformation>
+					</output>
+				</topic_route>
+            </session>
+        </domain_route>
+    </routing_service>
+</dds>
